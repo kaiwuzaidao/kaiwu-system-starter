@@ -1,0 +1,26 @@
+name: CI
+
+# 本仓自包含，没有跨仓依赖，CI 就是一次完整构建。
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      # 不传 -s .mvn/settings.xml：那份配置把 central 指向阿里云镜像，是给
+      # 境内开发机和内网 CI 用的。GitHub runner 在境外，走该镜像既慢又不稳
+      # （实测对 spring-boot-netty 返回 502），直连 Maven Central 更可靠。
+      - run: mvn -B verify

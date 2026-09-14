@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated build outputs are recreated from scanned source files."
+paths = [
+  '''(^|/)(target|dist|node_modules)/''',
+]

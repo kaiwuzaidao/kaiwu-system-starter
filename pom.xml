@@ -1,0 +1,249 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.0.7</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>com.kaiwuzaidao</groupId>
+    <artifactId>kaiwu-system-starter</artifactId>
+    <version>0.1.0</version>
+    <name>Kaiwu System Starter</name>
+    <description>Kaiwu Gateway Context 本地验证与声明式权限 SDK</description>
+    <licenses>
+        <license>
+            <name>Apache License, Version 2.0</name>
+            <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+            <distribution>repo</distribution>
+        </license>
+    </licenses>
+
+    <!-- 以下三段是 Maven Central 的强制要求：项目主页、SCM 坐标、维护者信息。
+         缺任何一段，发布校验都会直接拒绝。 -->
+    <url>https://github.com/kaiwuzaidao/kaiwu-system-starter</url>
+
+    <scm>
+        <connection>scm:git:https://github.com/kaiwuzaidao/kaiwu-system-starter.git</connection>
+        <developerConnection>scm:git:ssh://git@github.com/kaiwuzaidao/kaiwu-system-starter.git</developerConnection>
+        <url>https://github.com/kaiwuzaidao/kaiwu-system-starter</url>
+        <tag>HEAD</tag>
+    </scm>
+
+    <developers>
+        <developer>
+            <id>kaiwuzaidao</id>
+            <name>Kaiwu</name>
+            <url>https://github.com/kaiwuzaidao</url>
+        </developer>
+    </developers>
+
+    <properties>
+        <!-- Spring Boot 4.0.7 管理的 httpcore5 5.3.6 有 2 个 HIGH：CVE-2026-54399
+             （超量请求头导致 DoS）、CVE-2026-54428（超大 HPACK 头导致 DoS）。修复版
+             5.4.3。它由 nacos-client 经 httpclient5 传递引入，本仓没有直接依赖。
+             Spring Boot 升级到自带该版本后可移除本行。 -->
+        <httpcore5.version>5.4.3</httpcore5.version>
+        <java.version>21</java.version>
+        <jackson-2-bom.version>2.21.5</jackson-2-bom.version>
+        <jackson-bom.version>3.1.5</jackson-bom.version>
+        <jjwt.version>0.13.0</jjwt.version>
+        <spring-cloud-commons.version>5.0.2</spring-cloud-commons.version>
+        <spotless.version>2.46.1</spotless.version>
+        <error-prone.version>2.36.0</error-prone.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-autoconfigure</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-web</artifactId>
+            <scope>provided</scope>
+        </dependency>
+        <!-- ADR 0024：只要 LoadBalancer 抽象，不引入任何具体 DiscoveryClient 实现。
+             optional 保证使用方不写 lb:// 时完全不受影响；要用 lb:// 则自行引入
+             spring-cloud-starter-loadbalancer 与对应注册中心的 starter。 -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-commons</artifactId>
+            <version>${spring-cloud-commons.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-api</artifactId>
+            <version>${jjwt.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-impl</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.jsonwebtoken</groupId>
+            <artifactId>jjwt-jackson</artifactId>
+            <version>${jjwt.version}</version>
+            <scope>runtime</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <palantirJavaFormat/>
+                        <removeUnusedImports/>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <!-- 绑到 validate：格式问题在编译前就报出来，不用等跑完测试。
+                             只绑 check 不绑 apply——CI 里自动改写源码会让构建产物和仓库内容对不上。
+                             本地修复用 mvn spotless:apply。 -->
+                        <id>spotless-check</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+            <!--
+                ErrorProne：编译期抓真实缺陷（字符串用 == 比较、格式化串参数不匹配、
+                误用 Optional、忽略应当检查的返回值等）。只开它自带的 ERROR 级别，
+                不自定义规则集——PMD 那种大而全的规则库需要长期裁剪，噪音会让人学会忽略红灯。
+
+                JDK 21 需要下面那组 compilerArgs 才能让插件访问 javac 内部 API，
+                这是 ErrorProne 官方对 JDK 16+ 的既定要求，不是本项目的特殊处理。
+            -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <!-- -J 前缀的参数只在 fork 模式下有效：不 fork 时 javac 在 Maven 进程内运行，
+                         这些参数会被直接拒绝，表现为「An unknown compilation problem occurred」。 -->
+                    <fork>true</fork>
+                    <compilerArgs>
+                        <arg>-XDcompilePolicy=simple</arg>
+                        <arg>--should-stop=ifError=FLOW</arg>
+                        <arg>-Xplugin:ErrorProne</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.api=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.file=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.main=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.model=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.parser=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.processing=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.tree=ALL-UNNAMED</arg>
+                        <arg>-J--add-exports=jdk.compiler/com.sun.tools.javac.util=ALL-UNNAMED</arg>
+                        <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.code=ALL-UNNAMED</arg>
+                        <arg>-J--add-opens=jdk.compiler/com.sun.tools.javac.comp=ALL-UNNAMED</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>com.google.errorprone</groupId>
+                            <artifactId>error_prone_core</artifactId>
+                            <version>${error-prone.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+
+    <!-- 仓库地址由 CI 变量 NEXUS_URL 提供，凭据来自 ci-settings.xml，仓库内不出现明文。 -->
+    <distributionManagement>
+        <snapshotRepository>
+            <id>nexus-snapshots</id>
+            <url>${env.NEXUS_URL}/repository/maven-snapshots/</url>
+        </snapshotRepository>
+        <repository>
+            <id>nexus-releases</id>
+            <url>${env.NEXUS_URL}/repository/maven-releases/</url>
+        </repository>
+    </distributionManagement>
+
+
+    <profiles>
+        <!-- 只有发布到 Maven Central 时才激活：mvn -Prelease deploy
+             日常构建不走这里，否则本机没有 GPG 密钥就无法 install。 -->
+        <profile>
+            <id>release</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-source-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-sources</id>
+                                <goals><goal>jar-no-fork</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-javadoc-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>attach-javadocs</id>
+                                <goals><goal>jar</goal></goals>
+                            </execution>
+                        </executions>
+                        <configuration>
+                            <!-- 注释是中文，默认 doclint 会因为格式问题整批失败。 -->
+                            <doclint>none</doclint>
+                            <quiet>true</quiet>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-gpg-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>sign-artifacts</id>
+                                <phase>verify</phase>
+                                <goals><goal>sign</goal></goals>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.sonatype.central</groupId>
+                        <artifactId>central-publishing-maven-plugin</artifactId>
+                        <version>0.9.0</version>
+                        <extensions>true</extensions>
+                        <configuration>
+                            <!-- settings.xml 里同名 server 提供 Central 的用户令牌。 -->
+                            <publishingServerId>central</publishingServerId>
+                            <!-- 先进暂存区，人工在 Central 页面确认后再放行，
+                                 避免一条命令就把错版本永久发出去——Central 不允许覆盖。 -->
+                            <autoPublish>false</autoPublish>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+
+</project>
