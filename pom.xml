@@ -56,6 +56,7 @@
         <spring-cloud-commons.version>5.0.2</spring-cloud-commons.version>
         <spotless.version>2.46.1</spotless.version>
         <error-prone.version>2.36.0</error-prone.version>
+        <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
     </properties>
 
     <dependencies>
@@ -220,6 +221,9 @@
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-gpg-plugin</artifactId>
+                        <!-- source / javadoc 两个插件的版本由 spring-boot-dependencies 管着，
+                             gpg 没有——不写版本 Maven 会取构建当时的最新版，签名这一环不该浮动。 -->
+                        <version>${maven-gpg-plugin.version}</version>
                         <executions>
                             <execution>
                                 <id>sign-artifacts</id>
