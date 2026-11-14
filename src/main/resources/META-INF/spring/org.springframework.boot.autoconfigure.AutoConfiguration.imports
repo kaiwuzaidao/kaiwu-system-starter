@@ -1,1 +1,6 @@
 com.kaiwu.starter.KaiwuStarterAutoConfiguration
+com.kaiwu.starter.agent.AgentRegistryAutoConfiguration
+com.kaiwu.starter.agent.AgentExecutionAutoConfiguration
+com.kaiwu.starter.agent.AgentWriteAutoConfiguration
+com.kaiwu.starter.storage.config.ObjectStorageAutoConfiguration
+com.kaiwu.starter.storage.config.StoredFileAutoConfiguration

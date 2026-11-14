@@ -11,11 +11,17 @@
   连编译都到不了。修复只有一条命令 `mvn spotless:apply`（palantirJavaFormat），
   不要手工对齐——手工对齐的结果和 palantir 的输出几乎不会一致。
 - 提交前的固定动作：`mvn spotless:apply && ./scripts/verify.sh`。依据 ADR 0029。
-- 发布到内部 Nexus 走 GitLab CI（`.gitlab-ci.yml`），不在本机 deploy：
-  推默认分支由 `publish:snapshot` 自动发布 SNAPSHOT，下游业务项目据此解析依赖。
-  tag 触发的 release 尚未接入，需要时按 `platform/ci-templates` 的
-  `java-library-maven.yml` 补齐，并保证 tag 与 pom 版本一致。
-  凭据只来自 CI 变量 `NEXUS_MAVEN_USER` / `NEXUS_MAVEN_PASSWORD`（与 ci-templates
-  统一约定），settings 在 job 内临时生成，仓库内不得出现明文凭据或 truststore 密码。
-- 基础镜像一律取自 Harbor：内网 runner 无法访问 Docker Hub，写死上游地址会导致
-  拉取超时，CI 静默失败。
+
+## 后端包结构与契约 v1
+
+遵守 [PACKAGE_STRUCTURE.md](docs/PACKAGE_STRUCTURE.md) 与 [package-layout.json](docs/package-layout.json)。
+分类在前、技术层在后，直接 `identity/controller/UserController`，不再插入功能目录。
+公开 Java 类型按兼容清单保留；迁移不得改变权限、HTTP/Agent 协议和数据库语义。
+布局门禁由 `PackageLayoutContractTest` 随 Maven 测试执行。
+
+
+## Java 风格与中文 Javadoc
+
+遵守 [docs/JAVA_STYLE.md](docs/JAVA_STYLE.md)。所有手写 Java 类型、构造器和方法均使用中文
+Javadoc，说明职责、授权边界、状态迁移或副作用；禁止用复述签名的模板句充数。格式化统一使用
+Spotless 的 Palantir Java Format；提交前运行 `mvn spotless:apply` 与本仓验证命令。

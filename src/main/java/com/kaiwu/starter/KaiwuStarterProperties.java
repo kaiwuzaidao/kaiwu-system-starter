@@ -10,6 +10,7 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "kaiwu.starter")
 public class KaiwuStarterProperties {
 
+    private Tenancy tenancy = Tenancy.SINGLE_PROJECT;
     private boolean enabled = true;
     private String contextPublicKey;
     private String issuer = "kaiwu-gateway-service";
@@ -24,6 +25,22 @@ public class KaiwuStarterProperties {
             "/api/public/i18n/catalog",
             "/actuator/health",
             "/actuator/health/**"));
+
+    /** 默认固定项目，多项目须额外验证部署资格。 */
+    public enum Tenancy {
+        SINGLE_PROJECT,
+        MULTI_PROJECT
+    }
+
+    /** 返回配置的 Context 项目绑定模式。 */
+    public Tenancy getTenancy() {
+        return tenancy;
+    }
+
+    /** 未知值由配置绑定拒绝。 */
+    public void setTenancy(Tenancy tenancy) {
+        this.tenancy = tenancy;
+    }
 
     public boolean isEnabled() {
         return enabled;

@@ -1,5 +1,9 @@
 package com.kaiwu.starter;
 
+import com.kaiwu.starter.auth.config.MultiProjectProperties;
+import com.kaiwu.starter.auth.service.LifecycleAssertionVerifier;
+import com.kaiwu.starter.auth.service.LifecycleNonceStore;
+import com.kaiwu.starter.auth.service.TrustedProjectRegistry;
 import com.kaiwu.starter.client.ServiceAddressResolver;
 import com.kaiwu.starter.config.ProjectConfigClient;
 import com.kaiwu.starter.config.ProjectConfigProperties;
@@ -10,6 +14,7 @@ import com.kaiwu.starter.scheduler.ProjectSchedulerCoordinator;
 import com.kaiwu.starter.scheduler.ProjectSchedulerLifecycle;
 import com.kaiwu.starter.scheduler.ProjectSchedulerProperties;
 import com.kaiwu.starter.scheduler.ProjectSchedulerRuntime;
+import com.kaiwu.starter.todo.client.TodoClient;
 import java.time.Clock;
 import java.time.Duration;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +28,7 @@ import org.springframework.boot.context.properties.EnableConfigurationProperties
 import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.core.Ordered;
 import org.springframework.core.env.Environment;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
@@ -35,6 +41,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @AutoConfiguration
 @EnableConfigurationProperties({
     KaiwuStarterProperties.class,
+    MultiProjectProperties.class,
     NotificationProperties.class,
     ProjectSchedulerProperties.class,
     ProjectConfigProperties.class
@@ -115,8 +122,26 @@ public class KaiwuStarterAutoConfiguration {
                 runtime, coordinator, Duration.ofSeconds(Math.max(5, properties.getSyncIntervalSeconds())));
     }
 
+    /** 应用显式提供持久 nonce SPI 后，才装配独立生命周期校验器，兼容独占实例。 */
     @Bean
-    public GatewayContextVerifier kaiwuGatewayContextVerifier(KaiwuStarterProperties properties) {
+    @Lazy(false)
+    @ConditionalOnBean(LifecycleNonceStore.class)
+    @ConditionalOnMissingBean(LifecycleAssertionVerifier.class)
+    public LifecycleAssertionVerifier kaiwuLifecycleAssertionVerifier(
+            MultiProjectProperties deployment, KaiwuStarterProperties starter, LifecycleNonceStore nonces) {
+        return new LifecycleAssertionVerifier(deployment, starter, nonces);
+    }
+
+    /** 仅在多项目模式下解析应用提供的登记 SPI，并在初始化时验证部署资格。 */
+    @Bean
+    @Lazy(false)
+    public GatewayContextVerifier kaiwuGatewayContextVerifier(
+            KaiwuStarterProperties properties,
+            MultiProjectProperties deployment,
+            ObjectProvider<TrustedProjectRegistry> registry) {
+        if (properties.getTenancy() == KaiwuStarterProperties.Tenancy.MULTI_PROJECT) {
+            return new GatewayContextVerifier(properties, deployment, registry.getIfAvailable());
+        }
         return new GatewayContextVerifier(properties);
     }
 
@@ -131,6 +156,19 @@ public class KaiwuStarterAutoConfiguration {
             KaiwuStarterProperties starterProperties,
             ServiceAddressResolver addressResolver) {
         return new NotificationClient(notificationProperties, starterProperties.getProjectCode(), addressResolver);
+    }
+
+    /**
+     * 统一待办客户端（ADR 0034）。复用站内信的 {@code kaiwu.starter.notification.*} 配置，
+     * 缺地址或凭据时整体降级为不投递，业务代码无需做存在性判断。
+     */
+    @Bean
+    @ConditionalOnMissingBean(TodoClient.class)
+    public TodoClient kaiwuTodoClient(
+            NotificationProperties notificationProperties,
+            KaiwuStarterProperties starterProperties,
+            ServiceAddressResolver addressResolver) {
+        return new TodoClient(notificationProperties, starterProperties.getProjectCode(), addressResolver);
     }
 
     /**

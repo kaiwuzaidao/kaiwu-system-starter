@@ -26,6 +26,13 @@ public final class StarterAuthInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler)
             throws Exception {
+        // 仅 SDK 的固定控制器自行验证用途更窄的 Agent Context，不按路径前缀放行。
+        if (handler instanceof HandlerMethod method
+                && method.getBeanType() == com.kaiwu.starter.agent.controller.AgentCapabilityController.class)
+            return true;
+        if (handler instanceof HandlerMethod method
+                && method.getBeanType() == com.kaiwu.starter.agent.controller.AgentWriteCapabilityController.class)
+            return true;
         try {
             KaiwuContext context = verifier.verify(request.getHeader(CONTEXT_HEADER));
             String requiredPermission = requiredPermission(handler);

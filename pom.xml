@@ -13,7 +13,7 @@
 
     <groupId>com.kaiwuzaidao</groupId>
     <artifactId>kaiwu-system-starter</artifactId>
-    <version>0.1.0</version>
+    <version>0.2.0</version>
     <name>Kaiwu System Starter</name>
     <description>Kaiwu Gateway Context 本地验证与声明式权限 SDK</description>
     <licenses>
@@ -50,16 +50,50 @@
              Spring Boot 升级到自带该版本后可移除本行。 -->
         <httpcore5.version>5.4.3</httpcore5.version>
         <java.version>21</java.version>
-        <jackson-2-bom.version>2.21.5</jackson-2-bom.version>
-        <jackson-bom.version>3.1.5</jackson-bom.version>
+        <testcontainers.version>2.0.5</testcontainers.version>
+        <jackson-2-bom.version>2.21.8</jackson-2-bom.version>
+        <jackson-bom.version>3.1.8</jackson-bom.version>
         <jjwt.version>0.13.0</jjwt.version>
         <spring-cloud-commons.version>5.0.2</spring-cloud-commons.version>
         <spotless.version>2.46.1</spotless.version>
         <error-prone.version>2.36.0</error-prone.version>
         <maven-gpg-plugin.version>3.2.8</maven-gpg-plugin.version>
+        <awssdk.version>2.56.0</awssdk.version>
     </properties>
 
+    <!-- jjwt-jackson 在自身 pom 里声明 jackson-databind 2.12.7.1。Maven 实际按 Spring Boot BOM
+         解析到 ${jackson-2-bom.version}，但供应链扫描逐个读取传递依赖的 pom，看到的是 2.12.7.1，
+         会报出新版本里已修复的漏洞（CVE-2026-54512、-91776、-91777 等）。在本仓显式管理版本，
+         让扫描结果与实际解析一致。 -->
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-databind</artifactId>
+                <version>${jackson-2-bom.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>com.fasterxml.jackson.core</groupId>
+                <artifactId>jackson-core</artifactId>
+                <version>${jackson-2-bom.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
     <dependencies>
+        <!-- Manifest extensions must omit absent fields to retain v1 wire compatibility. -->
+        <dependency>
+            <groupId>com.fasterxml.jackson.core</groupId>
+            <artifactId>jackson-annotations</artifactId>
+        </dependency>
+        <!-- 业务项目选择 JDBC 幂等账本时引入；普通 SDK 使用方无需数据库。 -->
+        <dependency>
+            <groupId>org.springframework</groupId><artifactId>spring-jdbc</artifactId><optional>true</optional>
+        </dependency>
+        <!-- Agent 重放防护可选适配器；不强制普通 SDK 使用方安装 Redis。 -->
+        <dependency>
+            <groupId>org.springframework.data</groupId><artifactId>spring-data-redis</artifactId><optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-autoconfigure</artifactId>
@@ -76,6 +110,32 @@
             <groupId>org.springframework.cloud</groupId>
             <artifactId>spring-cloud-commons</artifactId>
             <version>${spring-cloud-commons.version}</version>
+            <optional>true</optional>
+        </dependency>
+
+        <!-- ADR 0039：对象存储走 S3 协议。可选依赖：只有 provider=kaiwu 的业务项目需要自行引入
+             s3 与 url-connection-client。排除 Netty 与 Apache 两个默认传输层，统一用 JDK HTTP，
+             避免给业务项目带进两套连接池。 -->
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${awssdk.version}</version>
+            <optional>true</optional>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>apache-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>url-connection-client</artifactId>
+            <version>${awssdk.version}</version>
             <optional>true</optional>
         </dependency>
 
@@ -101,6 +161,17 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId><artifactId>testcontainers-junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version><scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId><artifactId>testcontainers-mysql</artifactId>
+            <version>${testcontainers.version}</version><scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.mysql</groupId><artifactId>mysql-connector-j</artifactId><scope>test</scope>
         </dependency>
     </dependencies>
 
@@ -172,19 +243,6 @@
             </plugin>
         </plugins>
     </build>
-
-    <!-- 仓库地址由 CI 变量 NEXUS_URL 提供，凭据来自 ci-settings.xml，仓库内不出现明文。 -->
-    <distributionManagement>
-        <snapshotRepository>
-            <id>nexus-snapshots</id>
-            <url>${env.NEXUS_URL}/repository/maven-snapshots/</url>
-        </snapshotRepository>
-        <repository>
-            <id>nexus-releases</id>
-            <url>${env.NEXUS_URL}/repository/maven-releases/</url>
-        </repository>
-    </distributionManagement>
-
 
     <profiles>
         <!-- 只有发布到 Maven Central 时才激活：mvn -Prelease deploy
