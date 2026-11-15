@@ -1,6 +1,6 @@
 # Kaiwu System Starter 开发约定
 
-先读工作区 `../CLAUDE.md`、`../docs/ARCHITECTURE.md` 和 ADR 0003。
+先读本仓 [AGENTS.md](AGENTS.md) 和 System 仓的 [Gateway 认证契约（ADR 0003）](https://github.com/kaiwuzaidao/kaiwu-system-service/blob/v0.2.0/docs/adr/0003-gateway-centric-authentication.md)。
 
 - 本仓库是独立 Maven SDK，不是部署服务。
 - 不得依赖 System API、Domain 或数据库。

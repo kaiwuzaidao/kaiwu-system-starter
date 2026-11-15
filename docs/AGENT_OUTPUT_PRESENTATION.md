@@ -1,6 +1,6 @@
 # 声明式聊天结果展示
 
-2026-09-27。Manifest 可选 `outputView`，与 `inputForm` 独立。当前渲染为聊天内表格，不添加页面跳转，也不代表分页、详情动作或全部业务能力已覆盖。
+2026-09-27。Manifest 可选 `outputView`，与 `inputForm` 独立。默认渲染为聊天内表格；分页与行详情需要显式声明，见下文。
 
 ```java
 new OutputViewSpec("试用配置详情", List.of(

@@ -44,7 +44,7 @@ kaiwu:
       provider: kaiwu
       max-object-size: 20MB          # 与平台绑定上配置的上限取较小值
       kaiwu:
-        system-base-url: http://kaiwu-system:8080   # 直连 System，不经网关；支持 lb://
+        system-base-url: ${KAIWU_SYSTEM_SERVICE_URI}   # 直连 System，不经网关；支持 lb://
         credential: ${KAIWU_PROJECT_SERVICE_TOKEN}
         storage-name: default
 ```
@@ -109,7 +109,7 @@ kaiwu:
 ```
 
 ```java
-// 后端中转上传：写入对象并登记，登记失败会回收对象
+// 后端中转上传：写入对象并登记。登记结果不确定时保留对象，供后续核对
 StoredFile file = files.upload("invoice", multipart.getOriginalFilename(), multipart.getContentType(),
         multipart.getInputStream(), multipart.getSize(), userId);
 files.bind(file.id(), bizRecordId);              // 挂到业务记录；业务表只保存 file.id()
