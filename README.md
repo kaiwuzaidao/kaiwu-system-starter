@@ -1,6 +1,6 @@
 # Kaiwu System Starter
 
-业务服务接入 SDK，只负责：
+业务服务通过该 SDK 验证平台身份、检查项目权限，并按需接入以下能力。
 
 - 本地验证 Gateway 签发的 RS256、audience-bound Context。
 - 建立并清理 `StarterContext`。
@@ -10,7 +10,33 @@
 - 可选向平台投递站内信（`NotificationClient`）与统一待办（`TodoClient`），见下文「站内信与统一待办」。
 
 Starter 不依赖 `kaiwu-system-api`，不信任 `X-Project-Id` 或普通身份 Header。默认鉴权链路
-不回调 System；只有显式启用 scheduler 或站内信客户端时才使用独立服务凭据访问内部接口。
+不回调 System；定时任务、通知与待办、Agent 注册等可选能力按各自配置使用服务凭据。
+
+## 在业务服务中使用
+
+请将 Spring Boot 主类放在业务自己的基础包中（例如 `com.example.crm`）。若基础包设为 `com.kaiwu`，组件扫描会直接装配 Starter 的文件或 Agent 接口，绕过相应的自动配置开关。
+
+正式版本发布在 Maven Central，无需额外配置仓库：
+
+```xml
+<dependency>
+  <groupId>com.kaiwuzaidao</groupId>
+  <artifactId>kaiwu-system-starter</artifactId>
+  <version>0.2.0</version>
+</dependency>
+```
+
+需要行级数据范围时再加同版本的可选组件（见 [data-scope/README.md](data-scope/README.md)）：
+
+```xml
+<dependency>
+  <groupId>com.kaiwuzaidao</groupId>
+  <artifactId>kaiwu-data-scope</artifactId>
+  <version>0.2.0</version>
+</dependency>
+```
+
+两者版本保持一致。平台项目工厂生成的后端项目已按这一版本写好依赖。
 
 ## 项目 scheduler
 
@@ -76,13 +102,7 @@ System 不会下发 Java 类名、Shell 或任意 URL。执行语义为 at-least
   轮换意味着更新 `KAIWU_SCHEDULER_CREDENTIAL` 并重启实例。重启前旧凭据同步会失败，
   但 Starter 会保留最后一次有效配置继续执行，已配置的任务不会中断。
 
-构建：
-
-```bash
-export JAVA_HOME=/opt/homebrew/opt/openjdk@21/libexec/openjdk.jdk/Contents/Home
-export MAVEN_SKIP_RC=1
-mvn -s .mvn/settings.xml verify
-```
+维护本 SDK 时，在仓库根目录配置 JDK 21，确认 `mvn -version` 显示 Java 21，再运行 `./scripts/verify.sh` 校验主库。
 
 ## 站内信与统一待办
 
@@ -170,36 +190,6 @@ notificationClient.send(order.getOwnerUserId(),
 
 收件人必须是本项目有效成员；同样是尽力而为，失败只记日志（ADR 0007）。
 
-## 在业务服务中使用
-
-请将 Spring Boot 主类放在业务自己的基础包中（例如 `com.example.crm`）。若基础包设为 `com.kaiwu`，组件扫描会直接装配 Starter 的文件或 Agent 接口，绕过相应的自动配置开关。
-
-正式版本发布在 Maven Central，无需额外配置仓库：
-
-```xml
-<dependency>
-  <groupId>com.kaiwuzaidao</groupId>
-  <artifactId>kaiwu-system-starter</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
-
-需要行级数据范围时再加同版本的可选组件（见 [data-scope/README.md](data-scope/README.md)）：
-
-```xml
-<dependency>
-  <groupId>com.kaiwuzaidao</groupId>
-  <artifactId>kaiwu-data-scope</artifactId>
-  <version>0.2.0</version>
-</dependency>
-```
-
-两者版本保持一致。平台项目工厂生成的后端项目已按这一版本写好依赖。
-
-## License
-
-本项目基于 [Apache License 2.0](LICENSE) 开源。
-
 ## Agent 能力自动注册
 
 随 `0.2.0` 提供默认关闭的 Agent 注册客户端，支持启动注册、心跳、有界退避和凭据/版本错误停止。采用独立注册凭据，不改变现有用户 Context 验证，也不开放远程执行。见 [接入与状态说明](docs/AGENT_REGISTRATION.md)。
@@ -211,7 +201,10 @@ notificationClient.send(order.getOwnerUserId(),
 ## 行级数据范围（可选）
 
 业务项目可按需使用独立的 `kaiwu-data-scope` 组件，让同一接口按角色返回不同行：`KaiwuContext.dataScope()` 解析 Gateway 的 `ds` 声明，组件据此自动改写 MyBatis-Plus SQL。接入三步、改写规则、公开 API 与启动自检见 [data-scope/README.md](data-scope/README.md)。
-### 显式scope服务凭据（C5）
+
+## 后台服务调用
+
+### 使用限定 scope 的服务凭据
 
 `auth.client.ScopedServiceClient` 是供后台显式调用的公共Bearer传输，不自动装配，不拦截正常用户请求。
 构造时固定纯System服务原点、`Credential(serviceCode, scopes, token)` 与有界超时；每次调用固定代码定义的
@@ -221,7 +214,7 @@ notificationClient.send(order.getOwnerUserId(),
 
 旧`TodoClient`与`NotificationClient`仍保持现有构造器、线格式、缺配置跳过及失败不抛异常的尽力语义。
 新的显式scope传输不会替换它们；构造参数错误会在装配时拒绝，网络失败返回不含凭据或远端错误正文的结构化结果。
-本次不引入ProjectMemberClient、ManagedTodoClient或受限用户委托，它们属于后续独立步骤。
+成员查询、受管待办与受限委托的接入方式见下文。
 
 ### 项目候选成员查询（C3）
 
@@ -285,7 +278,7 @@ C4 没有自动配置、路径豁免或全局 audience 开关。接入方必须�
 回滚先停止发起与回调 worker，停用调用新增方法的 S2S 入口并撤销相应登记，再回撤本步 SDK；保留共享 nonce、审计、业务幂等账本及所有新增字段和墓碑。不得退化为跳过签名/重放或全局信任同项目 audience。若消费方已编译调用新方法，须先升级为不调用这些方法且拒绝相关入口的兼容制品，避免旧 SDK 的 NoSuchMethodError。
 
 
-### 文件证据保留（可选扩展）
+## 文件证据保留（可选扩展）
 
 业务项目先以新增迁移应用 `docs/storage-file-retention.sql`，再开启 `kaiwu.starter.storage.files.retention-enabled=true`。所有实例及文件管理/清理进程必须使用同一启用配置，不能在存在保留引用后回滚为旧版删除实现或关闭保护。旧二进制并不知道保留协议，混合部署前应暂停删除和purge。
 
@@ -370,3 +363,7 @@ Starter 的内存实现只存在于测试源码中。
 
 部署按 ADR 的第一期约束使用同一宿主机专用 Docker 网络和 Compose 服务名。Gateway 的 R4 内部路径
 404 与入站生命周期头剥离由 A1 落实，应用入口集成及数据库 SPI 由 T2 落实。本 SDK 负责验证契约。
+
+## License
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
