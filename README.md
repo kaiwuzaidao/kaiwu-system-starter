@@ -10,7 +10,18 @@
 - 可选向平台投递站内信（`NotificationClient`）与统一待办（`TodoClient`），见下文「站内信与统一待办」。
 
 Starter 不依赖 `kaiwu-system-api`，不信任 `X-Project-Id` 或普通身份 Header。默认鉴权链路
-不回调 System；只有显式启用 scheduler 或站内信客户端时才使用独立服务凭据访问内部接口。
+不回调 System；只有显式启用 scheduler、配置拉取、存储凭证或通知/待办客户端时才使用独立服务凭据访问内部接口。
+
+## 组件与能力全景（Maven Central `com.kaiwuzaidao:0.2.0`）
+
+| 组件 | 解决的核心问题 | 关键机制 |
+| --- | --- | --- |
+| **`kaiwu-system-starter`** | 业务服务零样板接入平台控制面 | 本地验证 60s Gateway Context、清理 `StarterContext`、执行 `@RequirePermission`、读取内存快照参数 `ProjectConfigClient`（带 fallback） |
+| **`kaiwu-data-scope`** | 防止 AI 编写 CRUD 时漏加行级隔离 | 解析签名 Context 中的 `ds`，通过 MyBatis-Plus 拦截器按表自动追加 SQL 条件；提供 `DataScopes.reassign` 与带理由审计的 `unrestricted` |
+| **对象存储 STS & 文件台账** | 长期密钥不出平台，保留原绑定即可读取历史文件 | `ObjectStorage` 凭项目服务凭据获取限定前缀 STS 临时凭证（OSS 与支持 STS 的 S3 兼容接入），业务只存 `storage_ref + object_key`；可选 `StoredFileService` 统一登记与孤儿清理 |
+| **统一待办 & 站内信 & 调度** | 跨项目审批待办联动与多副本安全定时任务 | `TodoClient` 按 `bizKey` 幂等开/关待办（或签/会签/撤回）；`ProjectScheduledTaskHandler` 中央抢占租约 + `fencingToken()` 防脑裂 |
+| **`kaiwu-excel`** | 避免导入导出公式注入、OOM 与静默截断 | 单 Sheet 未加密 XLSX 模板/读写 `ExcelTable`：拒绝公式、限制 ZIP 条目与 16 MiB 展开大小、超限直接报错 |
+| **受控 Agent 能力接入** | 让业务功能安全接入平台 AI 助手 | `TypedAgentRead` / `TypedAgentWrite` 显式声明参数、表单与输出白名单；写操作经预览冻结与同事务幂等账本 `AgentWriteLedger` 执行 |
 
 ## 项目 scheduler
 
@@ -211,19 +222,16 @@ notificationClient.send(order.getOwnerUserId(),
 ## 行级数据范围（可选）
 
 业务项目可按需使用独立的 `kaiwu-data-scope` 组件，让同一接口按角色返回不同行：`KaiwuContext.dataScope()` 解析 Gateway 的 `ds` 声明，组件据此自动改写 MyBatis-Plus SQL。接入三步、改写规则、公开 API 与启动自检见 [data-scope/README.md](data-scope/README.md)。
-### 显式scope服务凭据（C5）
+### 显式 Scope 服务凭据（默认关闭）
 
-`auth.client.ScopedServiceClient` 是供后台显式调用的公共Bearer传输，不自动装配，不拦截正常用户请求。
-构造时固定纯System服务原点、`Credential(serviceCode, scopes, token)` 与有界超时；每次调用固定代码定义的
-`Endpoint(path, scope)`。实际权限以System数据库中的项目、服务、scope、状态和到期时间为准，不能信任客户端声明。
-不发送用户Context，不读取旧delivery-token配置，不跟随重定向，不自动重试。成功/拒绝/不可用/正文超限/本地scope不符
-由`Result.outcome`区分，调用方必须检查结果，不得把失败当作空业务成功。响应上限沿用原feature的32KiB，超限主动取消流。
+`auth.client.ScopedServiceClient` 是供后台显式调用的公共 Bearer 传输，不自动装配，不拦截正常用户请求。
+构造时固定纯 System 服务原点、`Credential(serviceCode, scopes, token)` 与有界超时；每次调用固定代码定义的
+`Endpoint(path, scope)`。实际权限以 System 数据库中的项目、服务、scope、状态和到期时间为准，不能信任客户端声明。
+不发送用户 Context，不读取旧 `delivery-token` 配置，不跟随重定向，不自动重试。成功/拒绝/不可用/正文超限/本地 scope 不符
+由 `Result.outcome` 区分，调用方必须检查结果，不得把失败当作空业务成功。响应上限 32 KiB，超限主动取消流。
+旧 `TodoClient` 与 `NotificationClient` 保持原有尽力语义与配置不变。
 
-旧`TodoClient`与`NotificationClient`仍保持现有构造器、线格式、缺配置跳过及失败不抛异常的尽力语义。
-新的显式scope传输不会替换它们；构造参数错误会在装配时拒绝，网络失败返回不含凭据或远端错误正文的结构化结果。
-本次不引入ProjectMemberClient、ManagedTodoClient或受限用户委托，它们属于后续独立步骤。
-
-### 项目候选成员查询（C3）
+### 项目候选成员查询（默认关闭）
 
 `com.kaiwu.starter.members.client.ProjectMemberClient`供后台worker显式装配，无自动配置或用户请求拦截器：
 
@@ -245,7 +253,7 @@ var eligibility = members.eligibility(candidateIds, "approver");
 超限及错误响应均主动取消流。旧TodoClient/NotificationClient的构造器、报文和尽力调用行为不变。
 使用这些类型的服务需要同时升级编译和运行时的 Starter 依赖。
 
-### 受管待办投递（C2）
+### 受管待办投递（默认关闭）
 
 `todo.client.ManagedTodoClient`由后台worker显式创建，使用独立的`todo:managed`服务凭据，不自动装配，不挂在用户请求链路上：
 
@@ -265,24 +273,20 @@ var result = client.putManaged(persistedOperation);
 `getManagedReceipt`返回STORED仅表示存在投影，不能直接确认任意本地版本。单次OPEN失败不会禁用后续终态关闭。
 旧TodoClient/NotificationClient及其配置、线格式和尽力调用行为保留。System 协议开关默认关闭。
 
-### 受限 Context 委托（C4）
+### 受限 Context 委托（S2S 显式原语）
 
-只有调用方已按 D06 完成服务签名、原始路径及 nonce 校验后，显式 S2S 入口才可调用 `GatewayContextVerifier.verifyDelegatedSource`。来源 audience 和允许集合必须来自服务端可信登记，不能取请求自报值；它只验 Gateway Context，不表示发起权限或服务委托已通过。随后业务服务先校验绑定的 `initiatePermission`，再调用 `requireDelegation` 与可信登记的完整元组逐项比较。普通 `verify` 和 Agent 校验仍只接受本服务原有 audience；不要将受限入口挂到普通浏览器请求。
+只有调用方已按服务签名、原始路径及 nonce 校验后，显式 S2S 入口才可调用 `GatewayContextVerifier.verifyDelegatedSource`。来源 audience 和允许集合必须来自服务端可信登记，不能取请求自报值；它只验 Gateway Context，不表示发起权限或服务委托已通过。随后业务服务先校验绑定的 `initiatePermission`，再调用 `requireDelegation` 与可信登记的完整元组逐项比较。普通 `verify` 和 Agent 校验仍只接受本服务原有 audience；不要将受限入口挂到普通浏览器请求。
 
 
-C4 没有自动配置、路径豁免或全局 audience 开关。接入方必须在明确登记的 S2S Handler 自行完成以下顺序，任一步失败立即停止且不写业务数据：
+该能力没有自动配置、路径豁免或全局 audience 开关。接入方必须在明确登记的 S2S Handler 自行完成以下顺序，任一步失败立即停止且不写业务数据：
 
-1. 按 D06 校验唯一头、有效 kid、原始 method/path/query、时间及原始正文和 Context 摘要的服务签名。
+1. 校验唯一头、有效 kid、原始 method/path/query、时间及原始正文和 Context 摘要的服务签名。
 2. 在所有接收副本共享的持久存储中原子占用 nonce，至少保留五分钟；库不可用失败关闭。
 3. 以该端点可信登记中的单一来源 audience 调用 `verifyDelegatedSource`，取得真实来源的用户、项目和权限。
 4. 从已发布业务类型绑定取得必填 `initiatePermission`，检查已验证 Context 的权限，再检查目标资源归属和状态。
 5. 用经过服务认证的 caller、已验证 Context 的 audience/projectCode、服务端固定的 target/endpoint/scope，以及已验签正文的 businessType 构造 `DelegationBinding`，调用 `requireDelegation` 与服务端允许集合精确比较；随后才进入业务事务。
 
-两方法是调用方编排所需的局部校验原语，不能证明此前已验签、已占用 nonce 或已做领域授权；不得将外部自报元组同时放入 observed 和 allowed。`requireDelegation` 不从 audience 字符串推导服务名，目标服务和端点由接入方可信配置保证。普通 `StarterAuthInterceptor` 仍使用 `verify`，不会放行这类来源 Context；生产接入方式应单独审查，不扩大普通路径或通配受众，也不要将来源 Context 填入普通请求级 `StarterContext`。
-
-本步测试含临时 RSA/HMAC、双 HTTP 参考接收副本及真实共享 MySQL nonce，覆盖 Context 替换、重放、无权限和存储故障；参考接入方只位于测试源码，不是已注册的 Workflow 服务。实际 Workflow 幂等事务、业务快照/正文校验及真实 Gateway 联调仍须后续验收。旧单服务 audience、Agent 用途隔离、TodoClient/NotificationClient 和 C5/C3/C2 代码保持原行为；C5 多凭据开关仍须保持默认 false。
-
-回滚先停止发起与回调 worker，停用调用新增方法的 S2S 入口并撤销相应登记，再回撤本步 SDK；保留共享 nonce、审计、业务幂等账本及所有新增字段和墓碑。不得退化为跳过签名/重放或全局信任同项目 audience。若消费方已编译调用新方法，须先升级为不调用这些方法且拒绝相关入口的兼容制品，避免旧 SDK 的 NoSuchMethodError。
+两方法是调用方编排所需的局部校验原语，不能证明此前已验签、已占用 nonce 或已做领域授权；不得将外部自报元组同时放入 observed 和 allowed。普通 `StarterAuthInterceptor` 仍使用 `verify`，不会放行这类来源 Context。
 
 
 ### 文件证据保留（可选扩展）
